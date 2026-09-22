@@ -788,6 +788,67 @@ add_bvh_instances(uint32_t geometry_id,
          }
       }
 
+      /* NOTE(divergence-study, 2026-09-23): child_bounds[] above was read out
+       * of *child_map, i.e. the referenced BLAS's own destination buffer --
+       * but this mesa build never writes real geometry into that buffer (the
+       * GEN_RT_BVH packing code that used to is dead, commented-out code,
+       * superseded by the registerBLASTriangles/registerTLASInstances flat
+       * capture below), so those floats are uninitialized/stale memory. For
+       * multi-instance TLAS builds (classroom's 79 instances; cornell_box's
+       * single-instance TLAS instead takes the prim_count<=1 shortcut a few
+       * hundred lines down and never reaches rtcBuildBVH, which is why it
+       * never surfaced this) this reliably produces NaN/huge-magnitude
+       * bounds that crash Embree's builder (SIGBUS observed in classroom).
+       * Confirmed on the GPGPU-Sim side (vulkan_ray_tracing.cc,
+       * buildFallbackBVH()) that this Embree-built compressed BVH tree
+       * (root/copy_bvh_tree()/pInfo->pNext) is never actually consumed for
+       * ray-triangle testing -- buildFallbackBVH() explicitly ignores
+       * `as_root` and rebuilds its own flat BVH purely from the
+       * registerBLASTriangles/registerTLASInstances snapshots (object-space
+       * triangles + this same instance->transform, captured independently of
+       * child_bounds/child_map). So substituting a safe placeholder here
+       * only affects a tree Embree needs to not crash on, never rendering
+       * correctness. Must NOT skip/continue on a bad bound: idx (this
+       * function's returned count) is reused directly as the `count` passed
+       * to gpgpusim_registerTLASInstances() below, which is the real,
+       * consumed instance count/list -- dropping an entry here would
+       * silently drop a real object from the scene. Substitute the
+       * instance's own transform origin (always finite; comes from the
+       * app's real instance data, not the broken buffer read) as a
+       * degenerate point bound instead.
+       *
+       * isfinite() alone isn't enough: uninitialized memory also produces
+       * finite-but-astronomical garbage (~1e38, observed in classroom) that
+       * Embree's own internal bounds/quantization math can still overflow to
+       * Inf/NaN on and crash the same way. Classroom's real object-space
+       * vertex coordinates span roughly +-25 units (checked directly against
+       * the scene's .obj files); 1e6 gives orders-of-magnitude headroom for
+       * any real scene while still rejecting this class of garbage. */
+      #define VSIM_BVH_INSTANCE_BOUND_MAX 1.0e6f
+      bool bounds_sane =
+         isfinite(child_lower.v[0]) && isfinite(child_lower.v[1]) && isfinite(child_lower.v[2]) &&
+         isfinite(child_upper.v[0]) && isfinite(child_upper.v[1]) && isfinite(child_upper.v[2]) &&
+         fabsf(child_lower.v[0]) < VSIM_BVH_INSTANCE_BOUND_MAX &&
+         fabsf(child_lower.v[1]) < VSIM_BVH_INSTANCE_BOUND_MAX &&
+         fabsf(child_lower.v[2]) < VSIM_BVH_INSTANCE_BOUND_MAX &&
+         fabsf(child_upper.v[0]) < VSIM_BVH_INSTANCE_BOUND_MAX &&
+         fabsf(child_upper.v[1]) < VSIM_BVH_INSTANCE_BOUND_MAX &&
+         fabsf(child_upper.v[2]) < VSIM_BVH_INSTANCE_BOUND_MAX;
+      if (!bounds_sane)
+      {
+         struct vsim_bvh_vec3f origin = {
+            .v = {
+               instance->transform.matrix[0][3],
+               instance->transform.matrix[1][3],
+               instance->transform.matrix[2][3],
+            },
+         };
+         printf("EMBREE: geomID %d primID %d: bogus instance bounds (unwritten BLAS "
+                "buffer), substituting transform origin (%5.3f, %5.3f, %5.3f)\n",
+                geometry_id, first_primitive_id + p, origin.v[0], origin.v[1], origin.v[2]);
+         child_lower = child_upper = origin;
+      }
+
       prims_out[idx++] = (struct RTCBuildPrimitive) {
          .geomID = geometry_id,
          .primID = first_primitive_id + p,
@@ -798,7 +859,7 @@ add_bvh_instances(uint32_t geometry_id,
          .upper_y = child_upper.v[1],
          .upper_z = child_upper.v[2],
       };
-      printf("EMBREE: Add AABB geometry: geomID: %d, primID %d, box (%5.3f, %5.3f, %5.3f), (%5.3f, %5.3f, %5.3f)\n", 
+      printf("EMBREE: Add AABB geometry: geomID: %d, primID %d, box (%5.3f, %5.3f, %5.3f), (%5.3f, %5.3f, %5.3f)\n",
             geometry_id, first_primitive_id + p,
             child_lower.v[0], child_lower.v[1], child_lower.v[2],
             child_upper.v[0], child_upper.v[1], child_upper.v[2]);
