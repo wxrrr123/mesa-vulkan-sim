@@ -21,6 +21,8 @@
  * IN THE SOFTWARE.
  */
 
+// clang-format off
+
 #include "lvp_private.h"
 #include "lvp_acceleration_structure.h"
 #include "vsim_private.h"
@@ -46,39 +48,49 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_acceleration_structure, base,
                                VkAccelerationStructureKHR,
                                VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR)
 
-void print_vec4(struct vsim_bvh_vec4f val) {
+// clang-format on
+
+void print_vec4(struct vsim_bvh_vec4f val)
+{
    printf("(%5.3f, %5.3f, %5.3f, %5.3f)", val.v[0], val.v[1], val.v[2], val.v[3]);
 }
-void print_vec3(struct vsim_bvh_vec3f val) {
+void print_vec3(struct vsim_bvh_vec3f val)
+{
    printf("(%5.3f, %5.3f, %5.3f)", val.v[0], val.v[1], val.v[2]);
 }
-void print_tri(struct vsim_bvh_triangle val) {
+void print_tri(struct vsim_bvh_triangle val)
+{
    printf("Triangle: \t");
    print_vec3(val.v[0]);
    print_vec3(val.v[1]);
    print_vec3(val.v[2]);
    printf("\n");
 }
-void print_node(struct vsim_bvh_node val) {
+void print_node(struct vsim_bvh_node val)
+{
    printf("Compressed Node: %c\t", val.is_leaf ? 'l' : 'i');
    printf("exp: (%d, %d, %d)\t", val.exp_x, val.exp_y, val.exp_z);
    printf("origin: (%f, %f, %f)\n", val.origin_x, val.origin_y, val.origin_z);
    printf("Children:\n");
-   for (unsigned i = 0; i < 6; i++) {
-      printf("\t%p: (%d, %d, %d), (%d, %d, %d)\n", val.children[i], 
-            val.lower_x[i], val.lower_y[i], val.lower_z[i], 
-            val.upper_x[i], val.upper_y[i], val.upper_z[i]);
+   for (unsigned i = 0; i < 6; i++)
+   {
+      printf("\t%p: (%d, %d, %d), (%d, %d, %d)\n", val.children[i],
+             val.lower_x[i], val.lower_y[i], val.lower_z[i],
+             val.upper_x[i], val.upper_y[i], val.upper_z[i]);
    }
 }
-void print_leaf(struct vsim_bvh_leaf val) {
+void print_leaf(struct vsim_bvh_leaf val)
+{
    printf("Leaf: %c\t", val.is_leaf ? 'y' : 'n');
    printf("geomID: %d\t primID: %d\n", val.geometry_id, val.primitive_id);
 }
 
-void embree_error_function(void* userPtr, enum RTCError error, const char* str) {
-  printf("EMBREE: Error %d: %s\n", error, str);
+void embree_error_function(void *userPtr, enum RTCError error, const char *str)
+{
+   printf("EMBREE: Error %d: %s\n", error, str);
 }
 
+// clang-format off
 
 static uint64_t
 lvp_bvh_max_size(VkAccelerationStructureTypeKHR type, uint64_t leaf_count)
@@ -897,13 +909,16 @@ vsim_bvh_node_set_child_bounds(struct vsim_bvh_node *node,
 
 static void
 vsim_bvh_leaf_init(struct vsim_bvh_leaf *leaf,
-                  const struct RTCBuildPrimitive* primitive)
+                  const struct RTCBuildPrimitive* primitive,
+                  const size_t primitiveCount)
 {
-   *leaf = (struct vsim_bvh_leaf) {
-      .is_leaf = true,
-      .geometry_id = primitive->geomID,
-      .primitive_id = primitive->primID,
-   };
+   leaf->is_leaf = true;
+   leaf->geometry_id = primitive[0].geomID;
+   leaf->primitive_count = primitiveCount;
+
+   for (size_t i = 0; i < primitiveCount; i++) {
+      leaf->primitive_index[i] = primitive[i].primID;
+   }
 }
 
 static void*
@@ -938,9 +953,9 @@ rtc_create_leaf_cb(RTCThreadLocalAllocator alloc,
                    const struct RTCBuildPrimitive* primitives,
                    size_t primitiveCount, void* userPtr)
 {
-   assert(primitiveCount == 1);
+   // assert(primitiveCount == 1);
    struct vsim_bvh_leaf *leaf = rtcThreadLocalAlloc(alloc, sizeof(*leaf), 4);
-   vsim_bvh_leaf_init(leaf, primitives);
+   vsim_bvh_leaf_init(leaf, primitives, primitiveCount);
    return leaf;
 }
 
@@ -1158,31 +1173,34 @@ pack_node(struct vsim_bvh_node *node, bool is_root, void *out,
    }
 }
 
+// clang-format on
+
 static VkResult
 lvp_cpu_build_acceleration_structures(
-   struct lvp_device *device,
-   uint32_t infoCount,
-   const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-   const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos,
-   bool is_host_build)
+    struct lvp_device *device,
+    uint32_t infoCount,
+    const VkAccelerationStructureBuildGeometryInfoKHR *pInfos,
+    const VkAccelerationStructureBuildRangeInfoKHR *const *ppBuildRangeInfos,
+    bool is_host_build)
 {
    printf("LVP: Building acceleration structure\n");
    RTCDevice rtc = rtcNewDevice("ignore_config_files=1");
    rtcSetDeviceErrorFunction(rtc, embree_error_function, NULL);
 
-   for (uint32_t i = 0; i < infoCount; i++) {
-      const VkAccelerationStructureBuildGeometryInfoKHR *pInfo = &pInfos[i];
+   for (uint32_t i = 0; i < infoCount; i++)
+   {
+      VkAccelerationStructureBuildGeometryInfoKHR *pInfo = &pInfos[i];
       gpgpusim_setGeometries(pInfo->pGeometries, pInfo->geometryCount);
       const VkAccelerationStructureBuildRangeInfoKHR *pBuildRangeInfos =
-         ppBuildRangeInfos[i];
+          ppBuildRangeInfos[i];
       LVP_FROM_HANDLE(lvp_acceleration_structure, src_accel,
                       pInfo->srcAccelerationStructure);
       LVP_FROM_HANDLE(lvp_acceleration_structure, dst_accel,
                       pInfo->dstAccelerationStructure);
 
       struct lvp_bvh_build_state build_state = {
-         .device = device,
-         .is_host_build = is_host_build,
+          .device = device,
+          .is_host_build = is_host_build,
       };
 
       uint64_t total_prim_count = 0;
@@ -1201,32 +1219,34 @@ lvp_cpu_build_acceleration_structures(
 
       uint32_t prim_count = 0;
 
-      for (unsigned g = 0; g < pInfo->geometryCount; g++) {
+      for (unsigned g = 0; g < pInfo->geometryCount; g++)
+      {
          const VkAccelerationStructureGeometryKHR *pGeometry =
-            pInfo->pGeometries ? &pInfo->pGeometries[g] :
-                                 pInfo->ppGeometries[g];
+             pInfo->pGeometries ? &pInfo->pGeometries[g] : pInfo->ppGeometries[g];
 
-         build_state.geometries[g] = (struct lvp_bvh_build_geometry_state) {
-            .pGeometry = pGeometry,
-            .triangles = &scratch_triangles[prim_count],
+         build_state.geometries[g] = (struct lvp_bvh_build_geometry_state){
+             .pGeometry = pGeometry,
+             .triangles = &scratch_triangles[prim_count],
          };
 
-         switch (pGeometry->geometryType) {
-         case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
+         switch (pGeometry->geometryType)
+         {
+         case VK_GEOMETRY_TYPE_TRIANGLES_KHR:
+         {
             const VkAccelerationStructureGeometryTrianglesDataKHR *triangles =
-               &pGeometry->geometry.triangles;
-               
-               assert(infoCount == 1); // these g indices down here probably should be i
+                &pGeometry->geometry.triangles;
 
-            lvp_bvh_parse_triangles(build_state.geometries[g].triangles,         // triangles_out
-                                    pBuildRangeInfos[g].primitiveCount,          // triangle_count
+            assert(infoCount == 1); // these g indices down here probably should be i
+
+            lvp_bvh_parse_triangles(build_state.geometries[g].triangles, // triangles_out
+                                    pBuildRangeInfos[g].primitiveCount,  // triangle_count
                                     doha_to_host_const(triangles->indexData,
                                                        &build_state) +
-                                       pBuildRangeInfos[g].primitiveOffset,
+                                        pBuildRangeInfos[g].primitiveOffset,
                                     triangles->indexType,
                                     doha_to_host_const(triangles->vertexData,
                                                        &build_state) +
-                                       0/*pBuildRangeInfos[g].primitiveOffset*/,
+                                        0 /*pBuildRangeInfos[g].primitiveOffset*/,
                                     triangles->vertexStride,
                                     triangles->vertexFormat,
                                     pBuildRangeInfos[g].firstVertex,
@@ -1234,41 +1254,43 @@ lvp_cpu_build_acceleration_structures(
                                                        &build_state),
                                     doha_to_host_const(triangles->transformData,
                                                        &build_state) +
-                                       pBuildRangeInfos[g].transformOffset);
+                                        pBuildRangeInfos[g].transformOffset);
 
             uint32_t tri_added = add_bvh_triangle_geometry(g, &scratch_rtc_prims[prim_count],
-                                         build_state.geometries[g].triangles,
-                                         0, pBuildRangeInfos[g].primitiveCount);
+                                                           build_state.geometries[g].triangles,
+                                                           0, pBuildRangeInfos[g].primitiveCount);
             printf("EMBREE: %d triangles added; total: %d\n", tri_added, prim_count + tri_added);
             prim_count += tri_added;
             break;
          }
 
-         case VK_GEOMETRY_TYPE_AABBS_KHR: {
+         case VK_GEOMETRY_TYPE_AABBS_KHR:
+         {
             const VkAccelerationStructureGeometryAabbsDataKHR *aabbs =
-               &pGeometry->geometry.aabbs;
+                &pGeometry->geometry.aabbs;
             prim_count +=
-               add_bvh_aabbs_geometry(g, &scratch_rtc_prims[prim_count],
-                                      0, pBuildRangeInfos[g].primitiveCount,
-                                      doha_to_host_const(aabbs->data,
-                                                         &build_state) +
-                                         pBuildRangeInfos[g].primitiveOffset,
-                                      aabbs->stride);
+                add_bvh_aabbs_geometry(g, &scratch_rtc_prims[prim_count],
+                                       0, pBuildRangeInfos[g].primitiveCount,
+                                       doha_to_host_const(aabbs->data,
+                                                          &build_state) +
+                                           pBuildRangeInfos[g].primitiveOffset,
+                                       aabbs->stride);
             break;
          }
 
-         case VK_GEOMETRY_TYPE_INSTANCES_KHR: {
+         case VK_GEOMETRY_TYPE_INSTANCES_KHR:
+         {
             const VkAccelerationStructureGeometryInstancesDataKHR *instances =
-               &pGeometry->geometry.instances;
+                &pGeometry->geometry.instances;
             build_state.geometries[g].instance_data =
-               doha_to_host_const(instances->data, &build_state) +
-               pBuildRangeInfos[g].primitiveOffset;
+                doha_to_host_const(instances->data, &build_state) +
+                pBuildRangeInfos[g].primitiveOffset;
             prim_count +=
-               add_bvh_instances(g, &scratch_rtc_prims[prim_count],
-                                 0, pBuildRangeInfos[g].primitiveCount,
-                                 instances->arrayOfPointers,
-                                 build_state.geometries[g].instance_data,
-                                 &build_state);
+                add_bvh_instances(g, &scratch_rtc_prims[prim_count],
+                                  0, pBuildRangeInfos[g].primitiveCount,
+                                  instances->arrayOfPointers,
+                                  build_state.geometries[g].instance_data,
+                                  &build_state);
             break;
          }
 
@@ -1284,7 +1306,8 @@ lvp_cpu_build_acceleration_structures(
       struct vsim_bvh_leaf tmp_leaf;
 
       struct vsim_bvh_node *root;
-      if (prim_count <= 1) {
+      if (prim_count <= 1)
+      {
          /* In this case, we don't aclvp_cpu_build_acceleration_structurestually need Embree to build a tree for us
           * because we only have one leaf.  It's easier to just construct the
           * two nodes we need manually.
@@ -1294,22 +1317,26 @@ lvp_cpu_build_acceleration_structures(
           */
          vsim_bvh_node_init(&tmp_root);
          if (prim_count > 0)
-            vsim_bvh_leaf_init(&tmp_leaf, scratch_rtc_prims);
+            vsim_bvh_leaf_init(&tmp_leaf, scratch_rtc_prims, prim_count);
          vsim_bvh_node_set_children(&tmp_root,
-            (struct vsim_bvh_node *[]) {
-               (struct vsim_bvh_node *)&tmp_leaf,
-            }, prim_count);
+                                    (struct vsim_bvh_node *[]){
+                                        (struct vsim_bvh_node *)&tmp_leaf,
+                                    },
+                                    prim_count);
          vsim_bvh_node_set_child_bounds(&tmp_root,
-            (const struct RTCBounds *[]) {
-               (const struct RTCBounds*)scratch_rtc_prims,
-            }, prim_count);
+                                        (const struct RTCBounds *[]){
+                                            (const struct RTCBounds *)scratch_rtc_prims,
+                                        },
+                                        prim_count);
          root = &tmp_root;
-      } else {
+      }
+      else
+      {
          struct RTCBuildArguments args = rtcDefaultBuildArguments();
          args.byteSize = sizeof(args);
          args.maxBranchingFactor = 6;
          args.minLeafSize = 1,
-         args.maxLeafSize = 1,
+         args.maxLeafSize = 7,
          args.bvh = rtc_bvh;
          args.primitives = scratch_rtc_prims;
          args.primitiveCount = prim_count;
@@ -1319,9 +1346,10 @@ lvp_cpu_build_acceleration_structures(
          args.setNodeBounds = rtc_set_node_bounds_cb;
          args.createLeaf = rtc_create_leaf_cb;
          args.userPtr = &build_state;
-         
-         const char* env_build_args = getenv("MESA_BVH_BUILD_ARGS");
-         if (env_build_args) {
+
+         const char *env_build_args = getenv("MESA_BVH_BUILD_ARGS");
+         if (env_build_args)
+         {
             printf("EMBREE: Using custom build args: %s\n", env_build_args);
             sscanf(env_build_args, "%u,%u,%u", &args.maxBranchingFactor, &args.maxDepth, &args.buildQuality);
          }
@@ -1329,45 +1357,102 @@ lvp_cpu_build_acceleration_structures(
          printf("EMBREE: Building %d wide tree (max depth %d) using quality %d\n", args.maxBranchingFactor, args.maxDepth, args.buildQuality);
          root = rtcBuildBVH(&args);
 
-         if (!root) {
+         if (!root)
+         {
             abort();
          }
 
          MESA_VSIM_DPRINTF("EMBREE: Build BVH with root %p\n", root);
          print_node(*root);
       }
-      assert(!root->is_leaf);
+      /* NOTE(divergence-study, 2026-09-22): removed `assert(!root->is_leaf)`. It's
+       * simply too strict, not a case downstream logic needed patching for. With
+       * args.minLeafSize = 1 and args.maxLeafSize = 7 above, Embree is explicitly
+       * permitted to return a single leaf as `root` for any prim_count in [2,7]
+       * (e.g. a 2-triangle mesh) -- the assert only ever anticipated the
+       * prim_count<=1 manual-construction path a few lines up, which already
+       * builds a synthetic internal root on purpose. The two real consumers of
+       * `root` below already handle a leaf-typed root correctly: copy_bvh_tree()
+       * branches on is_leaf at its top and never dereferences ->children[] on the
+       * leaf path, and gpgpusim_registerBLASTriangles()/registerTLASInstances()
+       * don't touch `root` at all (they use the flat scratch_triangles/
+       * instance_data + prim_count arrays). Everything else that would truly
+       * require an internal-node root (manual GEN_RT_BVH packing,
+       * node_type_size()/pack_node()) is dead, commented-out code below. See
+       * divergence-study/results-2026-09-22-classroom-bvh-leaf-root-fix.md. */
 
-      UNUSED uint32_t root_type, root_size;
-      node_type_size(root, &root_type, &root_size, &build_state);
+      ///////////////////////////////////
 
-      void *dst_map = (uint8_t *)dst_accel->address.bo + dst_accel->address.offset;
-      MESA_VSIM_DPRINTF("EMBREE: Set dst_map %p = accel->address.bo %p + accel->address.offset 0x%lx for accel %p\n", 
-               dst_map, dst_accel->address.bo, dst_accel->address.offset, dst_accel);
-
-      struct GEN_RT_BVH bvh = { };
-      bvh.RootNodeOffset = GEN_RT_BVH_length * 4;
-      uint8_t max_child_x = 0, max_child_y = 0, max_child_z = 0;
-      for (unsigned i = 0; i < 6; i++) {
-         max_child_x = MAX2(max_child_x, root->upper_x[i]);
-         max_child_y = MAX2(max_child_y, root->upper_y[i]);
-         max_child_z = MAX2(max_child_z, root->upper_z[i]);
+      // Fallback flat-BVH capture (for apps like Lumen that don't provide the
+      // pre-built node_t/trig_t BVH at descriptor bindings 12/13/14): this
+      // build never packs a walkable GEN_RT_BVH into the app AS buffer, so
+      // hand the sim the object-space triangles of this BLAS / the instance
+      // list of this TLAS now, while they are still in scope. The BLAS address
+      // used as the key matches instance.accelerationStructureReference.
+      {
+         void *as_capture_addr =
+             (void *)((uint8_t *)dst_accel->address.bo + dst_accel->address.offset);
+         if (pInfos->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR)
+         {
+            gpgpusim_registerBLASTriangles(as_capture_addr,
+                                           (const float *)scratch_triangles, prim_count);
+         }
+         else /* VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR */
+         {
+            // Single instances-geometry TLAS (Lumen/Cornell); prim_count is the
+            // instance count for that geometry.
+            for (unsigned g = 0; g < pInfo->geometryCount; g++)
+            {
+               const VkAccelerationStructureGeometryKHR *pGeom =
+                   pInfo->pGeometries ? &pInfo->pGeometries[g] : pInfo->ppGeometries[g];
+               if (pGeom->geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR)
+                  gpgpusim_registerTLASInstances(
+                      (void *)build_state.geometries[g].instance_data, prim_count);
+            }
+         }
       }
-      bvh.BoundsMin.X = root->origin_x;
-      bvh.BoundsMin.Y = root->origin_y;
-      bvh.BoundsMin.Z = root->origin_z;
-      bvh.BoundsMax.X = root->origin_x + ldexpf(max_child_x, root->exp_x - 8);
-      bvh.BoundsMax.Y = root->origin_y + ldexpf(max_child_y, root->exp_y - 8);
-      bvh.BoundsMax.Z = root->origin_z + ldexpf(max_child_z, root->exp_z - 8);
-      GEN_RT_BVH_pack(NULL, dst_map, &bvh);
-      printf("EMBREE: Pack bvh %p to dst_map %p\n", &bvh, dst_map);
 
-      void *root_map = dst_map + bvh.RootNodeOffset;
-      build_state.nodes_map = root_map + root_size * 64;
-      pack_node(root, true, root_map, &build_state);
-      printf("EMBREE: Pack root %p to root_map %p\n", root, root_map);
-      if (pInfo->type == VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR)
-         gpgpusim_addTreelets(dst_map);
+      if (pInfos->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR)
+      {
+         pInfo->pNext = copy_bvh_tree((void *)root);
+      }
+
+      ///////////////////////////////////
+
+      // UNUSED uint32_t root_type, root_size;
+      // node_type_size(root, &root_type, &root_size, &build_state);
+
+      // void *dst_map = (uint8_t *)dst_accel->address.bo + dst_accel->address.offset;
+      // MESA_VSIM_DPRINTF("EMBREE: Set dst_map %p = accel->address.bo %p + accel->address.offset 0x%lx for accel %p\n",
+      //                   dst_map, dst_accel->address.bo, dst_accel->address.offset, dst_accel);
+
+      // struct GEN_RT_BVH bvh = {};
+      // bvh.RootNodeOffset = GEN_RT_BVH_length * 4;
+      // uint8_t max_child_x = 0, max_child_y = 0, max_child_z = 0;
+      // for (unsigned i = 0; i < 6; i++)
+      // {
+      //    if (root->children[i])
+      //    {
+      //       max_child_x = MAX2(max_child_x, root->upper_x[i]);
+      //       max_child_y = MAX2(max_child_y, root->upper_y[i]);
+      //       max_child_z = MAX2(max_child_z, root->upper_z[i]);
+      //    }
+      // }
+      // bvh.BoundsMin.X = root->origin_x;
+      // bvh.BoundsMin.Y = root->origin_y;
+      // bvh.BoundsMin.Z = root->origin_z;
+      // bvh.BoundsMax.X = root->origin_x + ldexpf(max_child_x, root->exp_x - 8);
+      // bvh.BoundsMax.Y = root->origin_y + ldexpf(max_child_y, root->exp_y - 8);
+      // bvh.BoundsMax.Z = root->origin_z + ldexpf(max_child_z, root->exp_z - 8);
+      // GEN_RT_BVH_pack(NULL, dst_map, &bvh);
+      // printf("EMBREE: Pack bvh %p to dst_map %p\n", &bvh, dst_map);
+
+      // void *root_map = dst_map + bvh.RootNodeOffset;
+      // build_state.nodes_map = root_map + root_size * 64;
+      // pack_node(root, true, root_map, &build_state);
+      // printf("EMBREE: Pack root %p to root_map %p\n", root, root_map);
+      // if (pInfo->type == VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR)
+      //    gpgpusim_addTreelets(dst_map);
 
       rtcReleaseBVH(rtc_bvh);
       MESA_VSIM_DPRINTF("EMBREE: Release rtcBVH structure created at %p\n", rtc_bvh);
@@ -1377,6 +1462,39 @@ lvp_cpu_build_acceleration_structures(
 
    return VK_SUCCESS;
 }
+
+void *copy_bvh_tree(void *node)
+{
+   if (node == NULL)
+   {
+      return NULL;
+   }
+
+   struct vsim_bvh_node *original_node = (struct vsim_bvh_node *)node;
+
+   if (original_node->is_leaf)
+   {
+      struct vsim_bvh_leaf *original_leaf = (struct vsim_bvh_leaf *)node;
+      struct vsim_bvh_leaf *new_leaf = (struct vsim_bvh_leaf *)malloc(sizeof(struct vsim_bvh_leaf));
+      memcpy(new_leaf, original_leaf, sizeof(struct vsim_bvh_leaf));
+
+      return new_leaf;
+   }
+   else
+   {
+      struct vsim_bvh_node *new_node = (struct vsim_bvh_node *)malloc(sizeof(struct vsim_bvh_node));
+      memcpy(new_node, original_node, sizeof(struct vsim_bvh_node));
+
+      for (int i = 0; i < 6; i++)
+      {
+         new_node->children[i] = (struct vsim_bvh_node *)copy_bvh_tree(original_node->children[i]);
+      }
+
+      return new_node;
+   }
+}
+
+// clang-format off
 
 VkResult
 lvp_BuildAccelerationStructuresKHR(

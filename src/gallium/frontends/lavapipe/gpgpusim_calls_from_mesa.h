@@ -42,6 +42,17 @@ extern void gpgpusim_testTraversal(struct lvp_bvh_node* root);
 extern uint32_t gpgpusim_registerShader(char * shaderPath, uint32_t shader_type);
 extern void gpgpusim_allocBLAS(void* rootAddr, uint64_t bufferSize, void* gpgpusimAddr);
 extern void gpgpusim_allocTLAS(void* rootAddr, uint64_t bufferSize, void* gpgpusimAddr);
+/* Fallback flat-BVH capture: hand the sim per-BLAS object-space triangles
+ * (tri_count triangles, 9 floats each) and per-TLAS instances (count contiguous
+ * VkAccelerationStructureInstanceKHR) at build time. */
+extern void gpgpusim_registerBLASTriangles(void* blas_addr, const float* tris, uint32_t tri_count);
+extern void gpgpusim_registerTLASInstances(void* instances, uint32_t count);
+/* Buffer handed to the app via vkGetBufferDeviceAddress; identity-bound in
+ * the simulator so buffer_reference loads hit registered backing. */
+extern void gpgpusim_registerBufferDeviceAddress(void* addr, uint64_t size);
+/* Latest vkCmdPushConstants data, copied into each shader thread's
+ * push_const variable when rt_alloc_mem materializes it. */
+extern void gpgpusim_setPushConstants(const void* data, uint32_t offset, uint32_t size);
 extern void* gpgpusim_allocBuffer(void* bufferAddr, uint64_t bufferSize);
 
 extern void gpgpusim_vkCmdTraceRaysKHR(
@@ -56,7 +67,7 @@ extern void gpgpusim_vkCmdTraceRaysKHR(
                       uint64_t launch_size_addr);
 
 extern void gpgpusim_setDescriptor(uint32_t setID, uint32_t descID, void *address, uint32_t size, VkDescriptorType type);
-extern void gpgpusim_setDescriptorSet(struct lvp_descriptor_set *set);
+extern void gpgpusim_setDescriptorSet(uint32_t setID, struct lvp_descriptor_set *set);
 
 // For trace runner
 extern void gpgpusim_addTreelets_cpp(VkAccelerationStructureKHR accelerationStructure);

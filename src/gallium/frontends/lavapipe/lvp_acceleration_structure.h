@@ -12,19 +12,23 @@
 // #include <vulkan/vulkan_intel.h>
 // #include <vulkan/vk_icd.h>
 
-struct vsim_bvh_vec4f {
+struct vsim_bvh_vec4f
+{
    float v[4];
 };
 
-struct vsim_bvh_vec3f {
+struct vsim_bvh_vec3f
+{
    float v[3];
 };
 
-struct vsim_bvh_triangle {
+struct vsim_bvh_triangle
+{
    struct vsim_bvh_vec3f v[3];
 };
 
-struct vsim_bvh_node {
+struct vsim_bvh_node
+{
    uint8_t is_leaf;
 
    int8_t exp_x;
@@ -45,10 +49,14 @@ struct vsim_bvh_node {
    struct vsim_bvh_node *children[6];
 };
 
-struct vsim_bvh_leaf {
+struct vsim_bvh_leaf
+{
    uint8_t is_leaf;
    uint32_t geometry_id;
    uint32_t primitive_id;
+
+   uint8_t primitive_count;
+   uint32_t primitive_index[7];
 };
 
 void print_vec4(struct vsim_bvh_vec4f val);
@@ -56,6 +64,8 @@ void print_vec3(struct vsim_bvh_vec3f val);
 void print_tri(struct vsim_bvh_triangle val);
 void print_node(struct vsim_bvh_node val);
 void print_leaf(struct vsim_bvh_leaf val);
-void embree_error_function(void* userPtr, enum RTCError error, const char* str);
+void embree_error_function(void *userPtr, enum RTCError error, const char *str);
+
+void *copy_bvh_tree(void *node);
 
 #endif /* VSIM_ACCELERATION_STRUCTURE_H */
