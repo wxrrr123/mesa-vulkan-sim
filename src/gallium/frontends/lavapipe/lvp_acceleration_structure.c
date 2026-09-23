@@ -793,12 +793,13 @@ add_bvh_instances(uint32_t geometry_id,
        * but this mesa build never writes real geometry into that buffer (the
        * GEN_RT_BVH packing code that used to is dead, commented-out code,
        * superseded by the registerBLASTriangles/registerTLASInstances flat
-       * capture below), so those floats are uninitialized/stale memory. For
-       * multi-instance TLAS builds (classroom's 79 instances; cornell_box's
-       * single-instance TLAS instead takes the prim_count<=1 shortcut a few
-       * hundred lines down and never reaches rtcBuildBVH, which is why it
-       * never surfaced this) this reliably produces NaN/huge-magnitude
-       * bounds that crash Embree's builder (SIGBUS observed in classroom).
+       * capture below), so those floats are whatever that memory already
+       * held. cornell_box (8 BLAS / 8 instances, does reach rtcBuildBVH) reads
+       * all-zero memory there, so every instance gets a degenerate but finite
+       * (0,0,0)-(0,0,0) box that Embree tolerates -- the bug was always
+       * present, just silent. classroom (79 instances) reads stale non-zero
+       * memory for 27 of them: NaN and finite-but-~1e38 values that crash
+       * Embree's builder (SIGBUS).
        * Confirmed on the GPGPU-Sim side (vulkan_ray_tracing.cc,
        * buildFallbackBVH()) that this Embree-built compressed BVH tree
        * (root/copy_bvh_tree()/pInfo->pNext) is never actually consumed for
